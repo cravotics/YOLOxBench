@@ -1,0 +1,25 @@
+[project]
+name = "yoloxbench"
+version = "0.1.0"
+description = "Benchmark & validation library for YOLO pipelines"
+authors = [
+    { name = "Sai Jagadeesh Muralikrishnan", email = "jagadeesh.offcl2k@gmail.com" }
+]
+license = { text = "MIT" }
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "typer (>=0.15.2,<0.16.0)",
+    "rich (>=14.0.0,<15.0.0)",
+    "matplotlib (>=3.10.1,<4.0.0)",
+    "plotly (>=6.0.1,<7.0.0)",
+    "ultralytics (>=8.3.110,<9.0.0)"
+]
+
+[tool.poetry.scripts]
+yox = "yoloxbench.cli:app"
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
