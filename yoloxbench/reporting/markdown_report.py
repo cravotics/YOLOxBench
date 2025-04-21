@@ -4,8 +4,9 @@ Create a rich Markdown report (tables + plots) from YOLOxBench runs.
 Usage
 -----
 $ yox report <csv> [<run1> <run2> ...]
+
 Outputs:
-  cmp_runs/<name>_report/
+  cmp_runs/<csv_basename>_report/
       report.md
       bar_metrics.png
       pr_curves/
@@ -26,7 +27,7 @@ METRICS = [
     "metrics/recall",
 ]
 
-# Header template for Markdown report
+# Markdown template
 _MD_HEADER = """# 📋 YOLOxBench Comparison Report
 
 *Generated: {date}*
@@ -63,11 +64,13 @@ _MD_HEADER = """# 📋 YOLOxBench Comparison Report
 """
 
 def _ensure_dir(p: Path) -> Path:
+    "Ensure directory exists and return it."
     p.mkdir(parents=True, exist_ok=True)
     return p
 
 
 def _plot_bar(df: pd.DataFrame, metric: str, out: Path):
+    "Plot a bar chart for the given metric and save it."
     plt.figure(figsize=(8, 4))
     df.plot.bar(x="run", y=metric, legend=False, ax=plt.gca())
     plt.ylabel(metric)
@@ -83,31 +86,33 @@ def make_markdown(csv_path: Path, runs: list[str] | None = None) -> Path:
     Parameters
     ----------
     csv_path : Path
-        CSV file with a "run" column and metric columns.
+        Path to CSV file with a 'run' column and metric columns.
     runs : list[str] | None
-        If provided, labels for the runs in order; otherwise derived from CSV.
+        Optional list of run names in the order to report. If omitted,
+        runs are inferred from the CSV's 'run' column.
     """
     csv_path = Path(csv_path)
     df = pd.read_csv(csv_path)
 
-    # Infer runs from the CSV if not provided
+    # Infer runs if not provided
     if runs is None:
+        if "run" not in df.columns:
+            raise ValueError("CSV must contain a 'run' column when runs not passed")
         runs = df["run"].tolist()
 
-    # Setup output folder
-    report_dir = _ensure_dir(csv_path.with_suffix("_report"))
+    # Setup output folder based on CSV stem
+    report_dir = _ensure_dir(csv_path.parent / f"{csv_path.stem}_report")
 
-    # 1. Leaderboard bar for primary metric
+    # 1) Leaderboard bar for the first metric
     bar_png = report_dir / "bar_metrics.png"
     primary = METRICS[0]
     _plot_bar(df, primary, bar_png)
 
-    # 2. Copy PR and confusion matrix images
+    # 2) Copy PR curves and confusion matrices
     pr_dir = _ensure_dir(report_dir / "pr_curves")
     cm_dir = _ensure_dir(report_dir / "confusion_matrices")
     pr_section, cm_section = [], []
     for run in runs:
-        # Paths based on run name
         src_run = Path(csv_path.parent.parent) / "detect" / run
         # PR curve
         src_pr = src_run / "PR_curve.png"
@@ -122,12 +127,12 @@ def make_markdown(csv_path: Path, runs: list[str] | None = None) -> Path:
             shutil.copy(src_cm, dst_cm)
             cm_section.append(f"![{run} CM]({dst_cm.relative_to(report_dir)})")
 
-    pr_text = "\n".join(pr_section) or "_No PR curves found._\n"
-    cm_text = "\n".join(cm_section) or "_No confusion matrices found._\n"
+    pr_text = "\n".join(pr_section) or "_No PR curves found._"
+    cm_text = "\n".join(cm_section) or "_No confusion matrices found._"
 
-    # 3. Summary table rows
+    # 3) Metrics summary table rows
     cols_header = " | ".join([m.split("/")[-1] for m in METRICS])
-    dashes = "|" + "---|" * (len(METRICS)+1)
+    dashes = "|" + "---|" * (len(METRICS) + 1)
     summary_rows = []
     for _, row in df.iterrows():
         vals = []
@@ -137,7 +142,7 @@ def make_markdown(csv_path: Path, runs: list[str] | None = None) -> Path:
         summary_rows.append(f"| {row['run']} | {' | '.join(vals)} |")
     summary_text = "\n".join(summary_rows)
 
-    # 4. Populate the Markdown
+    # 4) Render Markdown
     md = _MD_HEADER.format(
         date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         runs=", ".join(runs),
@@ -149,6 +154,7 @@ def make_markdown(csv_path: Path, runs: list[str] | None = None) -> Path:
         cm_section=cm_text,
     )
 
+    # Write to disk
     report_md = report_dir / "report.md"
     report_md.write_text(md, encoding="utf-8")
     return report_md
