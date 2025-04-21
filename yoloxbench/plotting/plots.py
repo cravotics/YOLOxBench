@@ -1,9 +1,13 @@
 from pathlib import Path
 import matplotlib.pyplot as plt
+import pandas as pd
 
-def save_bar(df, out: Path):
+
+def save_bar(df: pd.DataFrame, out: Path, metrics):
     out.mkdir(parents=True, exist_ok=True)
-    for col in [c for c in df.columns if c.startswith("metrics/mAP")]:
+    for col in metrics:
+        if col not in df.columns:
+            continue
         plt.figure()
         df.plot.bar(x="run", y=col, legend=False)
         plt.title(col)
