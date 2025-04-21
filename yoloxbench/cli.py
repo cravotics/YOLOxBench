@@ -201,7 +201,7 @@ def video(
     model_str, source_str = str(model), str(source)
 
     if gui:
-        run_gui(model_str, conf, iou)
+        run_gui(model_str)
     else:
         out_path = output or (source.parent / f"{source.stem}_annotated.mp4")
         video_out = annotate_and_save(model_str, source_str, str(out_path), conf, iou)

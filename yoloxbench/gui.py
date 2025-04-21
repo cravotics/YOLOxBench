@@ -10,12 +10,15 @@ from PyQt5.QtCore import QTimer
 from ultralytics import YOLO
 
 class VideoVisualizer(QWidget):
-    def __init__(self, model_path: str):
+    def __init__(self, model_path: str, conf: float = 0.25, iou: float = 0.5):
         super().__init__()
         self.setWindowTitle("YOLOxBench Video Viewer")
-        self.model = YOLO(model_path)
-        self.cap   = None
 
+        # load model with your thresholds
+        self.model = YOLO(model_path)
+        self.conf, self.iou = conf, iou
+
+        self.cap   = None
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._update_frame)
 
@@ -49,12 +52,13 @@ class VideoVisualizer(QWidget):
             self.cap.release()
             return
 
-        results = self.model(frame, verbose=False)[0]
+        # run inference with conf and iou
+        results = self.model(frame, conf=self.conf, iou=self.iou, verbose=False)[0]
         for box in results.boxes:
             x1,y1,x2,y2 = map(int, box.xyxy[0])
-            conf    = box.conf[0].item()
-            cls     = int(box.cls[0].item())
-            lbl     = f"{cls}:{conf:.2f}"
+            conf_score = box.conf[0].item()
+            cls_id     = int(box.cls[0].item())
+            lbl        = f"{cls_id}:{conf_score:.2f}"
             cv2.rectangle(frame, (x1,y1), (x2,y2), (0,255,0), 2)
             cv2.putText(
                 frame, lbl, (x1,y1-10),
@@ -66,9 +70,10 @@ class VideoVisualizer(QWidget):
         qt_img = QImage(rgb.data, w, h, ch*w, QImage.Format_RGB888)
         self.label.setPixmap(QPixmap.fromImage(qt_img))
 
-def run_gui(model_path: str):
-    """Launch the PyQt5 GUI viewer."""
+def run_gui(model_path: str, conf: float = 0.25, iou: float = 0.5):
+    # create the Qt app once
     app = QApplication(sys.argv)
-    win = VideoVisualizer(model_path)
-    win.show()
+    viewer = VideoVisualizer(model_path, conf, iou)
+    viewer.show()
     sys.exit(app.exec_())
+
