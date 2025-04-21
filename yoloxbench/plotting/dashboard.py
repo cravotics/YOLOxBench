@@ -55,8 +55,13 @@ for col, run_name in zip(cols, selected):
 
 st.markdown("---")
 st.subheader("Tabular comparison")
-st.dataframe(pd.DataFrame(rows).set_index("run"))
 
-st.markdown(
-    "***NOTE:*** Use this dashboard to *qualitatively* inspect PR/F1 curves and metric deltas between models after training/validation."
-)
+if not rows:
+    st.warning(
+        f"No runs contained the metric “{metric}”. "
+        "Try picking a different metric or check that your results.csv files "
+        "have the expected column names (e.g. metrics/mAP50(B))."
+    )
+    st.stop()   # exit Streamlit script early
+
+st.dataframe(pd.DataFrame(rows).set_index("run"))
