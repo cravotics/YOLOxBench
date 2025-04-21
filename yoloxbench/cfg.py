@@ -2,7 +2,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 import yaml
-from .exceptions import ConfigError
+from .exceptions import ConfigError, _fmt
 
 @dataclass(frozen=True, slots=True)
 class YoxConfig:
@@ -16,6 +16,11 @@ class YoxConfig:
     fp16: bool = True
     seed: int = 42
     extra: dict = field(default_factory=dict)
+    iou: float = 0.5
+    conf: float = 0.25
+    models: list[str] | None = None      # only for test mode
+    datasets: list[str] | None = None    # only for test mode
+    metrics: list[str] = field(default_factory=lambda: ["mAP50", "mAP50-95"])
 
     @staticmethod
     def load(path: str | Path | None = None, **overrides) -> "YoxConfig":

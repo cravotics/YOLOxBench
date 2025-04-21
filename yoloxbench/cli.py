@@ -154,11 +154,12 @@ def _print_metrics(metrics: dict):
 
 
 #----------- UI ----------
+# ---------- UI ----------
 @app.command()
 def ui(logdir: Path = Path("runs")):
     import streamlit.web.cli as stcli
-    stcli.main(["streamlit", "run", "yoloxbench/plotting/dashboard.py", "--", f"--logdir={logdir}"])
-
+    # first argument must be the Streamlit sub‑command ('run'), not the word 'streamlit'
+    stcli.main(["run", "yoloxbench/plotting/dashboard.py", "--", f"--logdir={logdir}"])
 
 
 if __name__ == "__main__":
