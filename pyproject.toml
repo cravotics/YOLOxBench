@@ -17,9 +17,10 @@ dependencies = [
     "streamlit (>=1.44.1,<2.0.0)"
 ]
 
-
 [project.scripts]
-yoloxbench = "yoloxbench.cli:cli"
+yox        = "yoloxbench.cli:app"   # shortest
+yoloxbench = "yoloxbench.cli:app"   # full name
+
 
 
 [build-system]

@@ -152,14 +152,22 @@ def _print_metrics(metrics: dict):
         table.add_row(k, f"{v:.4f}" if isinstance(v, float) else str(v))
     console.print(table)
 
+
 # ---------- UI ----------
 @app.command()
 def ui(logdir: Path = Path("runs")):
     import streamlit.web.cli as stcli
+    # first argument must be the Streamlit sub‑command ('run'), not the word 'streamlit'
     stcli.main(["run", "yoloxbench/plotting/dashboard.py", "--", f"--logdir={logdir}"])
 
 
+# ---------- REPORT ----------
+@app.command()
+def report(csv: Path = typer.Argument(..., help="CSV produced by `yox test`")):
+    from yoloxbench.reporting.markdown_report import make_markdown
+    rep = make_markdown(csv)
+    print(f"[bold green]✓[/] Report written to {rep}")
 
-
+# ---------- main ----------
 if __name__ == "__main__":
     app()
