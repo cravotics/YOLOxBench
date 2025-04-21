@@ -154,11 +154,24 @@ def _print_metrics(metrics: dict):
 
 
 # ---------- UI ----------
+# ---------- UI ----------
 @app.command()
 def ui(logdir: Path = Path("runs")):
-    import streamlit.web.cli as stcli
-    # first argument must be the Streamlit sub‑command ('run'), not the word 'streamlit'
-    stcli.main(["run", "yoloxbench/plotting/dashboard.py", "--", f"--logdir={logdir}"])
+    """Launch Streamlit dashboard in a separate process."""
+    import subprocess, sys
+    from pathlib import Path
+
+    dash = Path(__file__).parent / "plotting" / "dashboard.py"
+    if not dash.exists():
+        typer.echo(f"Dashboard script not found at {dash}", err=True)
+        raise typer.Exit(1)
+
+    cmd = [
+        sys.executable, "-m", "streamlit", "run",
+        str(dash), "--", f"--logdir={logdir}"
+    ]
+    subprocess.run(cmd)
+
 
 
 # ---------- REPORT ----------
