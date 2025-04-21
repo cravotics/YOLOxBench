@@ -156,8 +156,8 @@ def _print_metrics(metrics: dict):
 @app.command()
 def ui(logdir: Path = Path("runs")):
     import streamlit.web.cli as stcli
-    # first argument must be the Streamlit sub‑command ('run'), not the word 'streamlit'
     stcli.main(["run", "yoloxbench/plotting/dashboard.py", "--", f"--logdir={logdir}"])
+
 
 
 

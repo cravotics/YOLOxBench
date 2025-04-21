@@ -17,4 +17,4 @@ def validate(cfg: YoxConfig):
         )
     except Exception as e:
         raise ValError(_fmt(str(e), _smart_hint(str(e)))) from e
-    return metrics  # dict
+    return metrics
