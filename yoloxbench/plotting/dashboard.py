@@ -3,8 +3,9 @@
 Interactive dashboard to compare YOLOxBench runs.
 Launch with:
 
-    yox ui --logdir runs
+    yox ui --logdir <path>
 """
+
 from pathlib import Path
 
 import pandas as pd
@@ -13,18 +14,30 @@ import matplotlib.image as mpimg
 import plotly.express as px
 
 # ─── Page config ──────────────────────────────────────────────────────────────
-st.set_page_config(page_title="YOLOxBench Dashboard", layout="wide", initial_sidebar_state="expanded")
-
+st.set_page_config(
+    page_title="YOLOxBench Dashboard",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
 # ─── Helpers ───────────────────────────────────────────────────────────────────
-def list_run_dirs(root: Path) -> list[Path]:
-    detect = root / "detect"
-    if not detect.exists():
-        return []
-    return sorted(p.parent for p in detect.glob("*/results.csv"))
-
+def find_runs(root: Path) -> list[Path]:
+    """
+    If `root/results.csv` exists → treat `root` as a single run.
+    Else if `root/detect/*/results.csv` exist → collect those folders.
+    """
+    if (root / "results.csv").exists():
+        return [root]
+    detect_dir = root / "detect"
+    if detect_dir.is_dir():
+        return sorted(p.parent for p in detect_dir.glob("*/results.csv"))
+    return []
 
 def get_metric(row: pd.Series, key: str):
+    """
+    Return row[key], or first column ending/starting with key
+    (handles Ultralytics suffixes like '(B)' or '_B').
+    """
     if key in row:
         return row[key]
     for c in row.index:
@@ -32,147 +45,173 @@ def get_metric(row: pd.Series, key: str):
             return row[c]
     return None
 
-
-# ─── Collect runs ───────────────────────────────────────────────────────────────
+# ─── Gather run directories ────────────────────────────────────────────────────
 logdir = Path(st.experimental_get_query_params().get("logdir", ["runs"])[0]).expanduser()
 
-custom = st.sidebar.text_area(
-    "Custom run dirs (one per line, abs or relative to logdir/detect)",
-    height=120
+# Sidebar: custom override
+custom_txt = st.sidebar.text_area(
+    "Custom run dirs (one per line)", 
+    help="Absolute paths, or relative to `logdir`",
+    height=120,
 ).strip()
 
-if custom:
-    run_dirs = []
-    for line in custom.splitlines():
+if custom_txt:
+    runs = []
+    for line in custom_txt.splitlines():
         p = Path(line.strip())
         if not p.is_absolute():
-            p = logdir / "detect" / p
-        if p.is_dir() and (p / "results.csv").exists():
-            run_dirs.append(p)
-    run_dirs = sorted(run_dirs)
+            p = logdir / line.strip()
+        if (p / "results.csv").exists():
+            runs.append(p)
+    runs = sorted(runs)
 else:
-    run_dirs = list_run_dirs(logdir)
+    runs = find_runs(logdir)
 
-if not run_dirs:
-    st.sidebar.error("No runs found under `runs/detect/` or in custom list.")
+if not runs:
+    st.sidebar.error(f"No runs found at `{logdir}` or under `{logdir}/detect`.")
     st.stop()
 
-run_names = [d.name for d in run_dirs]
-
+run_names = [r.name for r in runs]
 
 # ─── Sidebar controls ───────────────────────────────────────────────────────────
-st.sidebar.title("YOLOxBench 🚀")
-selected = st.sidebar.multiselect("Pick runs to compare", run_names, default=[run_names[0]])
-metric = st.sidebar.selectbox("Scalar metric", ["metrics/mAP50", "metrics/mAP50-95", "metrics/precision", "metrics/recall"])
-x_metric = st.sidebar.selectbox("X‑axis (3D)", ["metrics/mAP50", "metrics/mAP50-95", "metrics/precision", "metrics/recall"], index=1)
-y_metric = st.sidebar.selectbox("Y‑axis (3D)", ["metrics/precision", "metrics/recall", "metrics/mAP50-95", "metrics/mAP50"], index=2)
+st.sidebar.title("YOLOxBench 🔍")
+selected = st.sidebar.multiselect(
+    "Select runs to compare", run_names, default=[run_names[0]]
+)
+metric = st.sidebar.selectbox(
+    "Primary metric", ["metrics/mAP50", "metrics/mAP50-95", "metrics/precision", "metrics/recall"]
+)
+x_metric = st.sidebar.selectbox(
+    "3D‑X axis", ["metrics/precision", "metrics/recall", "metrics/mAP50", "metrics/mAP50-95"], index=2
+)
+y_metric = st.sidebar.selectbox(
+    "3D‑Y axis", ["metrics/precision", "metrics/recall", "metrics/mAP50", "metrics/mAP50-95"], index=0
+)
 
 # ─── Tabs ───────────────────────────────────────────────────────────────────────
-tab_overview, tab_train, tab_table, tab_3d = st.tabs(["📊 Overview", "📈 Training", "📋 Table", "🕹️ 3D Comparison"])
-
+tab_overview, tab_train, tab_table, tab_3d = st.tabs(
+    ["📊 Overview", "📈 Training Curves", "📋 Table & Downloads", "🕹️ 3D Scatter"]
+)
 
 # ─── TAB 1: Overview ────────────────────────────────────────────────────────────
 with tab_overview:
+    st.markdown("### Run‑by‑run Summary")
     cols = st.columns(len(selected) or 1)
     for col, name in zip(cols, selected):
-        d = run_dirs[run_names.index(name)]
-        csv = d / "results.csv"
+        run_dir = runs[run_names.index(name)]
         col.subheader(name)
+        csv = run_dir / "results.csv"
         if not csv.exists():
-            col.error("No results.csv")
+            col.error("No `results.csv`")
             continue
 
         df = pd.read_csv(csv)
         last = df.iloc[-1]
         val = get_metric(last, metric)
+        col.markdown(f"**{metric.split('/')[-1]}** on final epoch")
         if pd.notna(val):
             col.metric(metric.split("/")[-1], f"{val:.3f}")
         else:
-            col.info("–")
+            col.info("Not available")
 
-        # static plots
+        col.markdown("Static plots from Ultralytics validation:")
         for fn, cap in [
-            ("PR_curve.png", "PR"), ("F1_curve.png", "F1"),
-            ("confusion_matrix.png", "CM"), ("confusion_matrix_normalized.png", "CM norm")
+            ("PR_curve.png", "PR Curve"),
+            ("F1_curve.png", "F1 Curve"),
+            ("confusion_matrix.png", "Confusion Matrix"),
+            ("confusion_matrix_normalized.png", "Confusion Matrix (Normalized)"),
         ]:
-            p = d / fn
-            if p.exists():
-                col.image(mpimg.imread(p), caption=cap, use_container_width=True)
+            imgp = run_dir / fn
+            if imgp.exists():
+                col.image(mpimg.imread(imgp), caption=cap, use_container_width=True)
 
-
-# ─── TAB 2: Training curves ─────────────────────────────────────────────────────
+# ─── TAB 2: Training Curves ─────────────────────────────────────────────────────
 with tab_train:
+    st.markdown("### Per‑epoch Training & Online Metrics")
     for name in selected:
-        d = run_dirs[run_names.index(name)]
-        csv = d / "results.csv"
-        st.markdown(f"### `{name}`")
+        run_dir = runs[run_names.index(name)]
+        st.markdown(f"#### `{name}`")
+        csv = run_dir / "results.csv"
         if not csv.exists():
-            st.warning("No results.csv")
+            st.warning("No `results.csv`")
             continue
+
         df = pd.read_csv(csv)
-
-        if "epoch" not in df:
-            st.info("No per‑epoch data in results.csv")
+        if "epoch" not in df.columns:
+            st.info("No epoch‑wise data in CSV")
             continue
 
-        losses = df[["epoch", "train/box_loss", "train/cls_loss", "train/dfl_loss"]].set_index("epoch")
-        st.line_chart(losses.rename(columns={
+        st.markdown("**Loss curves**")
+        loss_df = df[["epoch", "train/box_loss", "train/cls_loss", "train/dfl_loss"]].set_index("epoch")
+        loss_df = loss_df.rename(columns={
             "train/box_loss": "Box", "train/cls_loss": "Cls", "train/dfl_loss": "DFL"
-        }))
+        })
+        st.line_chart(loss_df, use_container_width=True)
 
+        st.markdown("**Online validation metrics**")
         online = [c for c in df.columns if c.startswith("metrics/")]
         if online:
-            online_df = df[["epoch"] + online].set_index("epoch").rename(columns=lambda c: c.split("/",1)[1].replace("(B)",""))
-            st.line_chart(online_df)
+            online_df = df[["epoch"] + online].set_index("epoch")
+            online_df.columns = [c.split("/",1)[1].replace("(B)", "") for c in online_df.columns]
+            st.line_chart(online_df, use_container_width=True)
+        else:
+            st.info("No `metrics/...` columns present")
 
-
-# ─── TAB 3: Table + CSV/MD download ───────────────────────────────────────────────
+# ─── TAB 3: Table & Downloads ───────────────────────────────────────────────────
 with tab_table:
+    st.markdown("### Numeric Comparison Table")
     rows = []
     for name in selected:
-        d = run_dirs[run_names.index(name)]
-        csv = d / "results.csv"
-        if not csv.exists():
-            continue
-        df = pd.read_csv(csv)
-        last = df.iloc[-1]
-        val = get_metric(last, metric)
-        rows.append({"run": name, metric.split("/")[-1]: val})
-    table = pd.DataFrame(rows).set_index("run")
-
-    st.dataframe(table, use_container_width=True)
-
-    if not table.empty:
-        csv_bytes = table.reset_index().to_csv(index=False).encode()
-        st.download_button("Download CSV", csv_bytes, "compare.csv", "text/csv")
-        md_bytes = table.to_markdown().encode()
-        st.download_button("Download MD", md_bytes, "compare.md", "text/markdown")
-
-
-# ─── TAB 4: 3D interactive scatter ───────────────────────────────────────────────
-with tab_3d:
-    # build a little DataFrame of final values
-    data_3d = []
-    for name in selected:
-        d = run_dirs[run_names.index(name)]
-        csv = d / "results.csv"
+        run_dir = runs[run_names.index(name)]
+        csv = run_dir / "results.csv"
         if not csv.exists():
             continue
         last = pd.read_csv(csv).iloc[-1]
-        data_3d.append({
+        rows.append({
             "run": name,
-            "x": get_metric(last, x_metric),
-            "y": get_metric(last, y_metric),
-            "z": get_metric(last, metric),
+            metric.split("/")[-1]: get_metric(last, metric)
         })
-    df3 = pd.DataFrame(data_3d).dropna()
-    if df3.empty:
-        st.info("No numeric metrics to plot in 3D.")
+    if not rows:
+        st.info("No numeric data available")
     else:
+        table = pd.DataFrame(rows).set_index("run")
+        st.dataframe(table, use_container_width=True)
+
+        st.markdown("**Download your comparison**")
+        csv_bytes = table.reset_index().to_csv(index=False).encode("utf-8")
+        st.download_button("Download CSV", csv_bytes, "yoloxbench_compare.csv", "text/csv")
+        md_bytes = table.to_markdown().encode("utf-8")
+        st.download_button("Download Markdown", md_bytes, "yoloxbench_compare.md", "text/markdown")
+
+# ─── TAB 4: 3D Scatter ───────────────────────────────────────────────────────────
+with tab_3d:
+    st.markdown("### 3D Interactive Scatter")
+    points = []
+    for name in selected:
+        run_dir = runs[run_names.index(name)]
+        csv = run_dir / "results.csv"
+        if not csv.exists():
+            continue
+        last = pd.read_csv(csv).iloc[-1]
+        x = get_metric(last, x_metric)
+        y = get_metric(last, y_metric)
+        z = get_metric(last, metric)
+        if pd.notna(x) and pd.notna(y) and pd.notna(z):
+            points.append({"run": name, "x": x, "y": y, "z": z})
+
+    if not points:
+        st.info("Not enough data for 3D plot")
+    else:
+        df3 = pd.DataFrame(points)
         fig = px.scatter_3d(
             df3, x="x", y="y", z="z", color="run",
-            labels={"x": x_metric.split("/")[-1], "y": y_metric.split("/")[-1], "z": metric.split("/")[-1]},
-            title="3D metric comparison"
+            labels={
+                "x": x_metric.split("/")[-1],
+                "y": y_metric.split("/")[-1],
+                "z": metric.split("/")[-1],
+            },
+            title="Metric vs Metric vs Metric"
         )
-        fig.update_traces(marker_size=6)
+        fig.update_traces(marker=dict(size=6))
         st.plotly_chart(fig, use_container_width=True)
+
