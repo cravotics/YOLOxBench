@@ -205,32 +205,37 @@ from pathlib import Path
 from .engine.video import annotate_and_save
 from .gui          import run_gui
 
+# ---------- VIDEO ----------
 @app.command()
 def video(
-    model: Path = typer.Option(..., exists=True, readable=True, help="path to .pt"),
-    source: Path = typer.Option(..., exists=True, readable=True, help="video file"),
-    output: Path = typer.Option(
-        None,
-        "--output", "-o",
-        help="where to save annotated video (if not using --gui)"
-    ),
-    conf: float = 0.25,
-    iou:  float = 0.5,
-    gui:  bool  = typer.Option(False, help="launch interactive PyQt GUI"),
+    model: Path = typer.Option(..., exists=True, readable=True, help="Path to .pt checkpoint"),
+    source: Path = typer.Option(..., exists=True, readable=True, help="Video file to run inference on"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Where to save annotated video"),
+    conf: float = typer.Option(0.25, help="Confidence threshold"),
+    iou: float = typer.Option(0.5, help="IOU threshold"),
+    gui: bool = typer.Option(False, help="Launch interactive PyQt GUI instead of saving"),
 ):
     """
-    Run YOLO inference on a video file.  By default saves an annotated copy;
-    if --gui is passed, opens the interactive Qt viewer instead.
+    Run YOLO inference on a video file (with a Rich progress bar),
+    or open an interactive PyQt viewer if --gui is passed.
     """
     model_str  = str(model)
     source_str = str(source)
 
     if gui:
-        run_gui(model_str)
+        run_gui(model_str, conf, iou)
     else:
         out_path = str(output or (source.parent / f"{source.stem}_annotated.mp4"))
         video_out = annotate_and_save(model_str, source_str, out_path, conf, iou)
         print(f"[bold green]✓[/] Annotated video saved to {video_out}")
+
+
+# ---------- helpers ----------
+def _print_cfg(cfg: YoxConfig):
+    table = Table(title="Resolved Training Config", box=box.SIMPLE)
+    for k, v in cfg.__dict__.items():
+        table.add_row(str(k), str(v))
+    console.print(table)
 
 # ---------- main ----------
 if __name__ == "__main__":
