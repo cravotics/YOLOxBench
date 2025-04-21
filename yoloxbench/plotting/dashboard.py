@@ -11,49 +11,50 @@ import pandas as pd
 import streamlit as st
 import matplotlib.image as mpimg
 
-# Configure the page
+# ─── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(page_title="YOLOxBench Dashboard", layout="wide")
 
-# ------------------------------------------------------------------ Helpers
-
+# ─── Helpers ────────────────────────────────────────────────────────────────────
 def list_run_dirs(root: Path) -> list[Path]:
     """
-    Return every subdirectory under `root/detect/` that contains a results.csv.
+    Return all subdirectories under root/detect/ that contain a results.csv.
     """
     detect_dir = root / "detect"
     if not detect_dir.exists():
         return []
-    return sorted(p.parent for p in detect_dir.glob("*/results.csv"))
+    runs = []
+    for d in detect_dir.iterdir():
+        if d.is_dir() and (d / "results.csv").exists():
+            runs.append(d)
+    return sorted(runs)
 
 def get_metric(row: pd.Series, key: str):
     """
-    Lookup `row[key]`, or first column that endswith/startswith key
+    Lookup row[key], or first column that endswith/startswith key
     (to handle Ultralytics suffixes like '(B)' or '_B').
     """
     if key in row:
         return row[key]
-    for colname in row.index:
-        if colname.endswith(key) or colname.startswith(key):
-            return row[colname]
+    for col in row.index:
+        if col.endswith(key) or col.startswith(key):
+            return row[col]
     return None
 
-# ------------------------------------------------------------------ UI Start
-
-# 1) Read `--logdir` from the Typer wrapper
+# ─── Sidebar: select logdir & (optional) custom runs ────────────────────────────
 logdir = Path(st.query_params.get("logdir", ["runs"])[0]).expanduser()
 
-# 2) Allow manual override of run folders
-custom = st.sidebar.text_area(
-    "Custom run dirs (one per line, absolute or relative to logdir/detect)",
+custom_txt = st.sidebar.text_area(
+    "Custom run dirs (one per line)\n"
+    "(absolute paths or relative to logdir/detect)", 
     value=""
 ).strip()
 
-# 3) Gather run directories
-if not custom:
+# ─── Gather run directories ─────────────────────────────────────────────────────
+if not custom_txt:
     run_dirs = list_run_dirs(logdir)
 else:
     run_dirs = []
-    for line in custom.splitlines():
+    for line in custom_txt.splitlines():
         p = Path(line.strip())
         if not p.is_absolute():
             p = logdir / "detect" / line.strip()
@@ -62,13 +63,14 @@ else:
     run_dirs = sorted(run_dirs)
 
 if not run_dirs:
-    st.warning(f"No runs with results.csv found under {logdir/'detect'} or in custom list.")
+    st.warning(f"No runs with results.csv under {logdir/'detect'} and no valid custom entries.")
     st.stop()
 
-run_names = [d.name for d in run_dirs]
+# build name→Path map
+run_map = {d.name: d for d in run_dirs}
+run_names = list(run_map.keys())
 
-# ------------------------------------------------------------------ Sidebar controls
-
+# ─── Sidebar: pick which runs & which metric ────────────────────────────────────
 st.sidebar.title("YOLOxBench runs")
 selected = st.sidebar.multiselect(
     "Select runs to compare",
@@ -81,51 +83,49 @@ metric = st.sidebar.selectbox(
     ["metrics/mAP50", "metrics/mAP50-95", "metrics/precision", "metrics/recall"],
 )
 
-# ------------------------------------------------------------------ Main display
-
+# ─── Per‑run display ─────────────────────────────────────────────────────────────
 cols = st.columns(len(selected) or 1)
 rows = []
 
 for col, run_name in zip(cols, selected):
-    run_dir = logdir / "detect" / run_name if not custom else next(d for d in run_dirs if d.name == run_name)
+    run_dir = run_map[run_name]
     csv_path = run_dir / "results.csv"
-
-    if not csv_path.exists():
-        col.warning("No results.csv")
-        continue
 
     df = pd.read_csv(csv_path)
     last = df.iloc[-1]
     value = get_metric(last, metric)
 
+    # collect for bottom table
     rows.append({"run": run_name, metric: value})
+
     col.header(run_name)
-    if value is not None and not pd.isna(value):
+    if pd.notna(value):
         col.metric(metric.split("/")[-1], f"{value:.3f}")
     else:
         col.info(f"{metric} not found")
 
     pr_curve = run_dir / "PR_curve.png"
     if pr_curve.exists():
-        img = mpimg.imread(pr_curve)
-        col.image(img, caption="PR Curve", use_container_width=True)
+        col.image(mpimg.imread(pr_curve), caption="PR Curve", use_container_width=True)
 
-# ------------------------------------------------------------------ Tabular comparison
-
+# ─── Tabular comparison ───────────────────────────────────────────────────────────
 st.markdown("---")
 st.subheader("Tabular comparison")
 
 if not rows:
-    st.info("No runs produced numeric metrics for the current selection.")
-    st.stop()
-
-table = pd.DataFrame(rows)
-if "run" not in table.columns:
-    st.warning("Internal error: no 'run' column present in metric rows.")
-    st.stop()
-
-table = table.set_index("run")
-if metric not in table.columns or table[metric].isna().all():
     st.info("No numeric metrics available for the current selection.")
 else:
+    table = pd.DataFrame(rows).set_index("run")
     st.dataframe(table)
+    st.download_button(
+        "Download CSV",
+        table.to_csv().encode("utf-8"),
+        file_name="yoxbench_comparison.csv",
+        mime="text/csv",
+    )
+    st.download_button(
+        "Download Markdown",
+        table.to_markdown(index=True).encode("utf-8"),
+        file_name="yoxbench_comparison.md",
+        mime="text/markdown",
+    )
