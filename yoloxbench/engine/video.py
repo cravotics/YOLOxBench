@@ -1,76 +1,65 @@
 # yoloxbench/engine/video.py
+from pathlib import Path
 import cv2
-import torch
 from ultralytics import YOLO
-from rich.progress import (
-    Progress, SpinnerColumn, BarColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn
-)
+from rich.progress import track
 
-
-def annotate_video(
+def annotate_and_save(
     model_path: str,
     source_path: str,
     output_path: str,
-    device: str = "0",
-):
+    conf: float = 0.25,
+    iou: float = 0.5
+) -> str:
     """
-    Load `model_path`, open `source_path` video, run frame-by-frame
-    inference, draw boxes, and write to `output_path`, while showing
-    a Rich progress bar.
+    Run YOLO inference on a video and write out an annotated copy,
+    showing a progress bar in your terminal.
+    Returns the path to the saved video.
     """
-    # 1) load model
+    # Load the model
     model = YOLO(model_path)
-    model.to(device)
 
-    # 2) open input & output
+    # Open input video
     cap = cv2.VideoCapture(source_path)
     if not cap.isOpened():
-        raise RuntimeError(f"Could not open video '{source_path}'")
+        raise RuntimeError(f"Could not open video {source_path!r}")
 
     fps    = cap.get(cv2.CAP_PROP_FPS)
-    w      = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    h      = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    width  = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     total  = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
+    # Prepare output writer
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    writer = cv2.VideoWriter(output_path, fourcc, fps, (w, h))
+    out = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
 
-    # 3) set up Rich progress bar
-    progress = Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        "[progress.percentage]{task.percentage:>3.0f}%",
-        TimeElapsedColumn(),
-        TimeRemainingColumn(),
-    )
-    task = progress.add_task("Annotating frames…", total=total)
+    # Process frame by frame
+    for _ in track(range(total), description="🔎 running inference"):
+        ret, frame = cap.read()
+        if not ret:
+            break
 
-    # 4) process
-    with progress:
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
+        # model(frame) returns a Results list; take first
+        res = model(frame, conf=conf, iou=iou)[0]
 
-            # run inference
-            results = model(frame, device=device, verbose=False)[0]
+        # Draw boxes & labels
+        for box in res.boxes:
+            x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().astype(int)
+            score = box.conf[0].cpu().item()
+            cls   = int(box.cls[0].cpu().item())
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (0,255,0), 2)
+            cv2.putText(
+                frame,
+                f"{cls}:{score:.2f}",
+                (x1, y1-6),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (0,0,255),
+                1,
+            )
 
-            # draw boxes & labels
-            for box in results.boxes:
-                x1, y1, x2, y2 = map(int, box.xyxy[0])
-                conf = box.conf[0].item()
-                cls  = int(box.cls[0].item())
-                label = f"{model.names[cls]} {conf:.2f}"
-                cv2.rectangle(frame, (x1, y1), (x2, y2), (16, 200, 100), 2)
-                cv2.putText(
-                    frame, label, (x1, y1 - 6),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (16, 200, 100), 1
-                )
+        out.write(frame)
 
-            writer.write(frame)
-            progress.update(task, advance=1)
-
-    # 5) cleanup
     cap.release()
-    writer.release()
+    out.release()
+    return str(output_path)

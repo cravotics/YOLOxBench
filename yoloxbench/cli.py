@@ -6,6 +6,10 @@ train   – fine‑tune or resume a model
 val     – evaluate one model on one dataset
 test    – compare N models across M datasets (collect metrics)
 cmp     – plot existing run folders
+ui      – launch Streamlit dashboard
+compare – advanced CSV comparison across all runs
+report  – generate Markdown report from comparison CSV
+video   – run inference on video or launch PyQt viewer
 """
 
 from pathlib import Path
@@ -18,6 +22,10 @@ from rich.table import Table
 
 from .cfg import YoxConfig
 from .engine import trainer, validator, tester, comparator
+from .engine.video import annotate_and_save
+from .gui import run_gui
+from .analysis.advanced_compare import compare as adv_compare
+from .reporting.markdown_report import make_markdown
 
 app = typer.Typer(
     add_completion=False,
@@ -32,20 +40,25 @@ console = Console()
 @app.callback(invoke_without_command=True)
 def _root(ctx: typer.Context):
     if ctx.invoked_subcommand is None:
-        banner = "[bold cyan]\nYOLOxBench[/] – what would you like to do?\n" \
-                 "  • [bold]train[/]   Fine‑tune or resume a model\n" \
-                 "  • [bold]val[/]     Validate one model\n" \
-                 "  • [bold]test[/]    Compare multiple models × datasets\n" \
-                 "  • [bold]cmp[/]     Plot existing run directories\n"
+        banner = (
+            "[bold cyan]\nYOLOxBench[/] – what would you like to do?\n"
+            "  • [bold]train[/]   Fine‑tune or resume a model\n"
+            "  • [bold]val[/]     Validate one model\n"
+            "  • [bold]test[/]    Compare multiple models × datasets\n"
+            "  • [bold]cmp[/]     Plot existing run directories\n"
+            "  • [bold]ui[/]      Launch Streamlit dashboard\n"
+            "  • [bold]compare[/] Advanced CSV comparison\n"
+            "  • [bold]report[/] Generate Markdown report\n"
+            "  • [bold]video[/]   Run inference on video\n"
+        )
         print(banner)
-        print("Try: [italic]yox train --help[/]  or  [italic]yox test --help[/]\n")
+        print("Try: [italic]yox train --help[/] or [italic]yox test --help[/]\n")
 
 
 # ---------- TRAIN ----------
 @app.command()
 def train(
-    cfg: Optional[Path] = typer.Option(
-        None, help="YAML config file (overrides CLI flags)"),
+    cfg: Optional[Path] = typer.Option(None, help="YAML config file (overrides CLI flags)"),
     model: str = typer.Option(..., help=".pt or model alias"),
     data: str = typer.Option(..., help="dataset YAML"),
     epochs: int = 100,
@@ -67,13 +80,12 @@ def train(
         device=device,
         extra={"workers": workers, "name": name},
     )
-
     _print_cfg(cfg_obj)
     run_dir = trainer.train(cfg_obj)
     print(f"[bold green]✓[/] Training complete – results in {run_dir}")
 
 
-# ---------- VALIDATE single model ----------
+# ---------- VALIDATE ----------
 @app.command()
 def val(
     cfg: Optional[Path] = typer.Option(None),
@@ -99,11 +111,12 @@ def val(
     _print_metrics(metrics)
 
 
-# ---------- TEST multi‑model × multi‑dataset ----------
+# ---------- TEST ----------
 @app.command()
 def test(
-    models: List[Path] = typer.Argument(..., exists=True, readable=True, dir_okay=False,
-                                        help="One or more .pt checkpoints"),
+    models: List[Path] = typer.Argument(
+        ..., exists=True, readable=True, dir_okay=False, help="One or more .pt checkpoints"
+    ),
     datasets: List[Path] = typer.Option(..., help="One or more dataset YAMLs"),
     iou: float = 0.5,
     conf: float = 0.25,
@@ -126,84 +139,50 @@ def test(
     print(f"[bold green]✓[/] Results saved to {csv_path}")
 
 
-# ---------- COMPARE existing run folders ----------
+# ---------- CMP ----------
 @app.command()
 def cmp(
-    run_dirs: List[Path] = typer.Argument(..., help="run directories to compare"),
-    out: Path = Path("cmp_out"),
+    run_dirs: List[Path] = typer.Argument(..., help="Run directories to compare"),
+    out: Path = typer.Option(Path("cmp_out"), help="Where to save comparison plots"),
 ):
     """Create comparison bar‑plots from Ultralytics run folders."""
     comparator.compare(run_dirs, out)
     print(f"[bold green]✓[/] Comparison plots saved to {out}")
 
 
-# ---------- helpers ----------
-def _print_cfg(cfg):
-    table = Table(title="Resolved Training Config", box=box.SIMPLE)
-    for k, v in cfg.__dict__.items():
-        table.add_row(str(k), str(v))
-    console.print(table)
-
-
-def _print_metrics(metrics: dict):
-    table = Table(title="Validation metrics", box=box.SIMPLE)
-    for k, v in metrics.items():
-        table.add_row(k, f"{v:.4f}" if isinstance(v, float) else str(v))
-    console.print(table)
-
-
-# ---------- UI ----------
 # ---------- UI ----------
 @app.command()
 def ui(logdir: Path = Path("runs")):
     """Launch Streamlit dashboard in a separate process."""
     import subprocess, sys
-    from pathlib import Path
 
     dash = Path(__file__).parent / "plotting" / "dashboard.py"
     if not dash.exists():
         typer.echo(f"Dashboard script not found at {dash}", err=True)
         raise typer.Exit(1)
 
-    cmd = [
-        sys.executable, "-m", "streamlit", "run",
-        str(dash), "--", f"--logdir={logdir}"
-    ]
+    cmd = [sys.executable, "-m", "streamlit", "run", str(dash), "--", f"--logdir={logdir}"]
     subprocess.run(cmd)
-from yoloxbench.analysis.advanced_compare import compare as adv_compare
 
+
+# ---------- COMPARE (advanced) ----------
 @app.command()
 def compare(logdir: Path = Path("runs")):
     """Advanced comparison across *all* runs under logdir/detect/."""
     csv = adv_compare(logdir)
-    print(f"[bold green]✓[/] Comparison written to {csv}")
+    print(f"[bold green]✓[/] Advanced comparison written to {csv}")
 
 
-
-from typing import List
-from pathlib import Path
-import typer
-from yoloxbench.reporting.markdown_report import make_markdown
-
+# ---------- REPORT ----------
 @app.command()
 def report(
     csv: Path = typer.Argument(..., help="CSV produced by `yox test`"),
-    runs: List[str] = typer.Argument(
-        ..., help="Run names in the same order as the CSV rows"
-    ),
+    runs: List[str] = typer.Argument(..., help="Run names in same order as CSV rows"),
 ):
-    """
-    Generate a Markdown report from a YOLOxBench CSV.
-    """
+    """Generate a Markdown report from a YOLOxBench CSV."""
     rep = make_markdown(csv, runs)
     print(f"[bold green]✓[/] Report written to {rep}")
 
-import subprocess, sys
-from pathlib import Path
-# … existing imports …
-
-from .engine.video import annotate_and_save
-from .gui          import run_gui
 
 # ---------- VIDEO ----------
 @app.command()
@@ -219,24 +198,30 @@ def video(
     Run YOLO inference on a video file (with a Rich progress bar),
     or open an interactive PyQt viewer if --gui is passed.
     """
-    model_str  = str(model)
-    source_str = str(source)
+    model_str, source_str = str(model), str(source)
 
     if gui:
         run_gui(model_str, conf, iou)
     else:
-        out_path = str(output or (source.parent / f"{source.stem}_annotated.mp4"))
-        video_out = annotate_and_save(model_str, source_str, out_path, conf, iou)
+        out_path = output or (source.parent / f"{source.stem}_annotated.mp4")
+        video_out = annotate_and_save(model_str, source_str, str(out_path), conf, iou)
         print(f"[bold green]✓[/] Annotated video saved to {video_out}")
 
 
-# ---------- helpers ----------
+# ---------- Helpers ----------
 def _print_cfg(cfg: YoxConfig):
     table = Table(title="Resolved Training Config", box=box.SIMPLE)
     for k, v in cfg.__dict__.items():
         table.add_row(str(k), str(v))
     console.print(table)
 
-# ---------- main ----------
+
+def _print_metrics(metrics: dict):
+    table = Table(title="Validation metrics", box=box.SIMPLE)
+    for k, v in metrics.items():
+        table.add_row(k, f"{v:.4f}" if isinstance(v, float) else str(v))
+    console.print(table)
+
+
 if __name__ == "__main__":
     app()
