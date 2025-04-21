@@ -152,14 +152,13 @@ def _print_metrics(metrics: dict):
         table.add_row(k, f"{v:.4f}" if isinstance(v, float) else str(v))
     console.print(table)
 
-
-#----------- UI ----------
 # ---------- UI ----------
 @app.command()
 def ui(logdir: Path = Path("runs")):
     import streamlit.web.cli as stcli
     # first argument must be the Streamlit sub‑command ('run'), not the word 'streamlit'
     stcli.main(["run", "yoloxbench/plotting/dashboard.py", "--", f"--logdir={logdir}"])
+
 
 
 if __name__ == "__main__":

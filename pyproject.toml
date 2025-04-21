@@ -18,8 +18,8 @@ dependencies = [
 ]
 
 
-[tool.poetry.scripts]
-yox = "yoloxbench.cli:app"
+[project.scripts]
+yoloxbench = "yoloxbench.cli:cli"
 
 
 [build-system]
