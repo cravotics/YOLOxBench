@@ -180,15 +180,21 @@ def compare(logdir: Path = Path("runs")):
 
 
 
-# ---------- REPORT ----------
+from typing import List
+from pathlib import Path
+import typer
+from yoloxbench.reporting.markdown_report import make_markdown
+
 @app.command()
 def report(
     csv: Path = typer.Argument(..., help="CSV produced by `yox test`"),
-    runs: List[str] = typer.Option(
-        ..., "--runs", help="Run names in the same order as the CSV rows"
+    runs: List[str] = typer.Argument(
+        ..., help="Run names in the same order as the CSV rows"
     ),
 ):
-    from yoloxbench.reporting.markdown_report import make_markdown
+    """
+    Generate a Markdown report from a YOLOxBench CSV.
+    """
     rep = make_markdown(csv, runs)
     print(f"[bold green]✓[/] Report written to {rep}")
 
