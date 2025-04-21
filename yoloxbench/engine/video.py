@@ -14,6 +14,8 @@ def annotate_and_save(
     """
     Run YOLO inference on a video and write out an annotated copy,
     showing a progress bar in your terminal.
+    Boxes are drawn in a green gradient: pale at the conf threshold,
+    darker as confidence approaches 1.0.
     Returns the path to the saved video.
     """
     # Load the model
@@ -33,31 +35,49 @@ def annotate_and_save(
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     out = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
 
-    # Process frame by frame
+    # Predefine gradient endpoints
+    low_color  = (200, 255, 200)  # pale green (B, G, R)
+    high_color = (0,   128,   0)  # dark green
+
+    # Process frame by frame with a progress bar
     for _ in track(range(total), description="🔎 running inference"):
         ret, frame = cap.read()
         if not ret:
             break
 
-        # model(frame) returns a Results list; take first
+        # Run inference
         res = model(frame, conf=conf, iou=iou)[0]
 
-        # Draw boxes & labels
+        # Draw boxes & labels with gradient color
         for box in res.boxes:
+            # extract box coords
             x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().astype(int)
-            score = box.conf[0].cpu().item()
+            score = float(box.conf[0].cpu().item())
             cls   = int(box.cls[0].cpu().item())
-            cv2.rectangle(frame, (x1, y1), (x2, y2), (0,255,0), 2)
+
+            # map score ∈ [conf, 1.0] to t ∈ [0,1]
+            t = (score - conf) / (1.0 - conf)
+            t = max(0.0, min(1.0, t))
+
+            # linear interpolate each channel
+            b = int(low_color[0] * (1 - t) + high_color[0] * t)
+            g = int(low_color[1] * (1 - t) + high_color[1] * t)
+            r = int(low_color[2] * (1 - t) + high_color[2] * t)
+            color = (b, g, r)
+
+            # draw rectangle and label
+            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
             cv2.putText(
                 frame,
                 f"{cls}:{score:.2f}",
-                (x1, y1-6),
+                (x1, y1 - 6),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.5,
-                (0,0,255),
+                (0, 0, 255),
                 1,
             )
 
+        # write annotated frame out
         out.write(frame)
 
     cap.release()

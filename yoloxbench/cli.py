@@ -191,22 +191,24 @@ def video(
     source: Path = typer.Option(..., exists=True, readable=True, help="Video file to run inference on"),
     output: Optional[Path] = typer.Option(None, "--output", "-o", help="Where to save annotated video"),
     conf: float = typer.Option(0.25, help="Confidence threshold"),
-    iou: float = typer.Option(0.5, help="IOU threshold"),
-    gui: bool = typer.Option(False, help="Launch interactive PyQt GUI instead of saving"),
+    iou:  float = typer.Option(0.5, help="IOU threshold"),
+    gui:  bool  = typer.Option(False, help="Launch interactive PyQt GUI instead of saving"),
 ):
     """
     Run YOLO inference on a video file (with a Rich progress bar),
     or open an interactive PyQt viewer if --gui is passed.
     """
-    model_str, source_str = str(model), str(source)
+    model_str  = str(model)
+    source_str = str(source)
 
     if gui:
-        run_gui(model_str)
+        # pass conf & iou into run_gui
+        run_gui(model_str, conf, iou)
     else:
-        out_path = output or (source.parent / f"{source.stem}_annotated.mp4")
-        video_out = annotate_and_save(model_str, source_str, str(out_path), conf, iou)
+        from .engine.video import annotate_and_save
+        out_path = str(output or (source.parent / f"{source.stem}_annotated.mp4"))
+        video_out = annotate_and_save(model_str, source_str, out_path, conf, iou)
         print(f"[bold green]✓[/] Annotated video saved to {video_out}")
-
 
 # ---------- Helpers ----------
 def _print_cfg(cfg: YoxConfig):
