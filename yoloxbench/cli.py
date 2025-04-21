@@ -198,6 +198,39 @@ def report(
     rep = make_markdown(csv, runs)
     print(f"[bold green]✓[/] Report written to {rep}")
 
+import subprocess, sys
+from pathlib import Path
+# … existing imports …
+
+from .engine.video import annotate_and_save
+from .gui          import run_gui
+
+@app.command()
+def video(
+    model: Path = typer.Option(..., exists=True, readable=True, help="path to .pt"),
+    source: Path = typer.Option(..., exists=True, readable=True, help="video file"),
+    output: Path = typer.Option(
+        None,
+        "--output", "-o",
+        help="where to save annotated video (if not using --gui)"
+    ),
+    conf: float = 0.25,
+    iou:  float = 0.5,
+    gui:  bool  = typer.Option(False, help="launch interactive PyQt GUI"),
+):
+    """
+    Run YOLO inference on a video file.  By default saves an annotated copy;
+    if --gui is passed, opens the interactive Qt viewer instead.
+    """
+    model_str  = str(model)
+    source_str = str(source)
+
+    if gui:
+        run_gui(model_str)
+    else:
+        out_path = str(output or (source.parent / f"{source.stem}_annotated.mp4"))
+        video_out = annotate_and_save(model_str, source_str, out_path, conf, iou)
+        print(f"[bold green]✓[/] Annotated video saved to {video_out}")
 
 # ---------- main ----------
 if __name__ == "__main__":
