@@ -102,10 +102,9 @@ def val(
 # ---------- TEST multi‑model × multi‑dataset ----------
 @app.command()
 def test(
-    models: str = typer.Option(
-        ..., help="Comma‑separated list of .pt files or checkpoints"),
-    datasets: str = typer.Option(
-        ..., help="Comma‑separated list of dataset YAMLs"),
+    models: List[Path] = typer.Argument(..., exists=True, readable=True, dir_okay=False,
+                                        help="One or more .pt checkpoints"),
+    datasets: List[Path] = typer.Option(..., help="One or more dataset YAMLs"),
     iou: float = 0.5,
     conf: float = 0.25,
     imgsz: int = 640,
@@ -116,8 +115,8 @@ def test(
     cfg_obj = YoxConfig.load(
         cfg,
         mode="test",
-        models=[p.strip() for p in models.split(",")],
-        datasets=[d.strip() for d in datasets.split(",")],
+        models=[str(p) for p in models],
+        datasets=[str(p) for p in datasets],
         iou=iou,
         conf=conf,
         imgsz=imgsz,

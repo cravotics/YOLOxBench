@@ -8,10 +8,13 @@ _ADAPTERS = {
 }
 
 def load_model(spec: str | Path, *args: Any, **kwargs: Any):
-    """Dispatch to the correct adapter based on file/alias."""
-    if isinstance(spec, str) and spec.lower().startswith("yolo"):
+    """Return a model object using the right adapter."""
+    spec_str = str(spec)
+    # if it’s a YOLO alias OR any .pt checkpoint ⇒ use Ultralytics
+    if spec_str.lower().startswith("yolo") or spec_str.endswith(".pt"):
         mod = import_module(__name__ + _ADAPTERS["ultralytics"])
         return mod.load(spec, *args, **kwargs)
-    # fallback
+
+    # fallback (future adapters)
     mod = import_module(__name__ + _ADAPTERS["v11"])
     return mod.load(spec, *args, **kwargs)
