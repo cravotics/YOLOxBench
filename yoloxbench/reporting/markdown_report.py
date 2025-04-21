@@ -6,7 +6,7 @@ Usage
 $ yox report <csv> [<run1> <run2> ...]
 
 Outputs:
-  cmp_runs/<csv_basename>_report/
+  cmp_runs/<csv_stem>_report/
       report.md
       bar_metrics.png
       pr_curves/
@@ -19,12 +19,12 @@ import shutil
 import pandas as pd
 import matplotlib.pyplot as plt
 
-# Define which metrics to include in the report
+# Define which metrics to include in the report (must match CSV column names)
 METRICS = [
-    "metrics/mAP50",
-    "metrics/mAP50-95",
-    "metrics/precision",
-    "metrics/recall",
+    "map50",       # mAP@0.5
+    "map50_95",    # mAP@0.5:0.95
+    "precision",   # Precision
+    "recall",      # Recall
 ]
 
 # Markdown template
@@ -64,13 +64,13 @@ _MD_HEADER = """# 📋 YOLOxBench Comparison Report
 """
 
 def _ensure_dir(p: Path) -> Path:
-    "Ensure directory exists and return it."
+    """Ensure directory exists and return it."""
     p.mkdir(parents=True, exist_ok=True)
     return p
 
 
 def _plot_bar(df: pd.DataFrame, metric: str, out: Path):
-    "Plot a bar chart for the given metric and save it."
+    """Plot a bar chart for the given metric and save it."""
     plt.figure(figsize=(8, 4))
     df.plot.bar(x="run", y=metric, legend=False, ax=plt.gca())
     plt.ylabel(metric)
@@ -103,7 +103,7 @@ def make_markdown(csv_path: Path, runs: list[str] | None = None) -> Path:
     # Setup output folder based on CSV stem
     report_dir = _ensure_dir(csv_path.parent / f"{csv_path.stem}_report")
 
-    # 1) Leaderboard bar for the first metric
+    # 1) Leaderboard bar for the primary metric (first in METRICS)
     bar_png = report_dir / "bar_metrics.png"
     primary = METRICS[0]
     _plot_bar(df, primary, bar_png)
@@ -131,7 +131,7 @@ def make_markdown(csv_path: Path, runs: list[str] | None = None) -> Path:
     cm_text = "\n".join(cm_section) or "_No confusion matrices found._"
 
     # 3) Metrics summary table rows
-    cols_header = " | ".join([m.split("/")[-1] for m in METRICS])
+    cols_header = " | ".join([m for m in METRICS])
     dashes = "|" + "---|" * (len(METRICS) + 1)
     summary_rows = []
     for _, row in df.iterrows():
