@@ -100,11 +100,28 @@ for col, run_name in zip(cols, selected):
 
 # ------------------------------------------------------------------ Tabular comparison
 
+# ------------------------------------------------------------------ Tabular comparison
 st.markdown("---")
 st.subheader("Tabular comparison")
 
-table = pd.DataFrame(rows).set_index("run")
-if table.empty or table[metric].isna().all():
+# If we never appended anything to rows, bail out now
+if not rows:
+    st.info("No runs produced numeric metrics for the current selection.")
+    st.stop()
+
+# Build DataFrame
+table = pd.DataFrame(rows)
+
+# If somehow "run" is still missing (defensive), warn and exit
+if "run" not in table.columns:
+    st.warning("Internal error: no 'run' column present in metric rows.")
+    st.stop()
+
+# Now safe to set index
+table = table.set_index("run")
+
+# If all values under our chosen metric are NaN, inform user
+if metric not in table.columns or table[metric].isna().all():
     st.info("No numeric metrics available for the current selection.")
 else:
     st.dataframe(table)
