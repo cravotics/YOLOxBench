@@ -170,6 +170,13 @@ def ui(logdir: Path = Path("runs")):
         str(dash), "--", f"--logdir={logdir}"
     ]
     subprocess.run(cmd)
+from yoloxbench.analysis.advanced_compare import compare as adv_compare
+
+@app.command()
+def compare(logdir: Path = Path("runs")):
+    """Advanced comparison across *all* runs under logdir/detect/."""
+    csv = adv_compare(logdir)
+    print(f"[bold green]✓[/] Comparison written to {csv}")
 
 
 
