@@ -1,67 +1,80 @@
-"""Interactive dashboard to compare YOLOxBench runs.
-Run with:  `yox ui --logdir runs`  (Typer already calls this script).
 """
-import streamlit as st
+Interactive dashboard to compare YOLOxBench runs.
+Launch with:
+
+    yox ui --logdir runs
+"""
 from pathlib import Path
+
 import pandas as pd
+import streamlit as st
 import matplotlib.image as mpimg
 
-st.set_page_config(page_title="YOLOxBench Dashboard", layout="wide")
+st.set_page_config(page_title="YOLOxBench Dashboard", layout="wide")
+
+# ------------------------------------------------------------------ helpers
+def list_run_dirs(root: Path) -> list[Path]:
+    """Return every directory under detect/* that contains a results.csv."""
+    return sorted(p.parent for p in (root / "detect").glob("*/results.csv"))
+
+def get_metric(row: pd.Series, key: str):
+    """Return row[key] or the first column that ends‑with key (handles '(B)')."""
+    if key in row:
+        return row[key]
+    for colname in row.index:
+        if colname.endswith(key):
+            return row[colname]
+    return None
+# ------------------------------------------------------------------ UI
 
 logdir = Path(st.query_params.get("logdir", ["runs"])[0]).expanduser()
 
-st.sidebar.title("YOLOxBench Runs")
-runs = sorted(p for p in logdir.glob("detect/*/results.csv"))
-if not runs:
-    st.warning(f"No results.csv under {logdir}/detect.")
+run_dirs = list_run_dirs(logdir)
+if not run_dirs:
+    st.warning(f"No runs with results.csv found under {logdir/'detect'}")
     st.stop()
 
+run_names = [d.name for d in run_dirs]
+
+st.sidebar.title("YOLOxBench runs")
 selected = st.sidebar.multiselect(
-    "Select runs to compare", options=[r.parent.name for r in runs], default=[runs[0].parent.name]
+    "Select runs to compare", options=run_names, default=[run_names[0]]
 )
 
 metric = st.sidebar.selectbox(
     "Metric", ["metrics/mAP50", "metrics/mAP50-95", "metrics/precision", "metrics/recall"]
 )
 
-cols = st.columns(len(selected))
+cols = st.columns(len(selected) or 1)
 rows = []
+
 for col, run_name in zip(cols, selected):
-    csv = logdir / "detect" / run_name / "results.csv"
+    run_dir = logdir / "detect" / run_name
+    csv = run_dir / "results.csv"
+    if not csv.exists():
+        col.warning("No results.csv")
+        continue
+
     df = pd.read_csv(csv)
     last = df.iloc[-1]
-
-    # Accept either exact column or any column that *contains* the metric key
-    def get_metric(row, key):
-        if key in row:
-            return row[key]
-        # fallback: first column that endswith the key (handles '(B)' suffix)
-        for col in row.index:
-            if col.endswith(key):
-                return row[col]
-        return None
-
     value = get_metric(last, metric)
-    if value is None:
-        continue  # skip this run if metric missing
 
     rows.append({"run": run_name, metric: value})
     col.header(run_name)
-    col.metric(metric.split("/")[-1], f"{value:.3f}")
+    if value is not None:
+        col.metric(metric.split("/")[-1], f"{value:.3f}")
+    else:
+        col.info(f"{metric} not found")
 
-    img_path = logdir / "detect" / run_name / "PR_curve.png"
-    if img_path.exists():
-        col.image(mpimg.imread(img_path), caption="PR Curve", use_column_width=True)
+    pr_curve = run_dir / "PR_curve.png"
+    if pr_curve.exists():
+        col.image(mpimg.imread(pr_curve), caption="PR Curve", use_column_width=True)
 
+# ---------------- table ----------------
 st.markdown("---")
 st.subheader("Tabular comparison")
 
-if not rows:
-    st.warning(
-        f"No runs contained the metric “{metric}”. "
-        "Try picking a different metric or check that your results.csv files "
-        "have the expected column names (e.g. metrics/mAP50(B))."
-    )
-    st.stop()   # exit Streamlit script early
-
-st.dataframe(pd.DataFrame(rows).set_index("run"))
+if not rows or pd.isna(pd.DataFrame(rows)[metric]).all():
+    st.info("No numeric metrics available for the current selection.")
+else:
+    st.dataframe(pd.DataFrame(rows).set_index("run"))
