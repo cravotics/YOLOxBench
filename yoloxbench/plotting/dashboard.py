@@ -1,4 +1,5 @@
 """
+# YOLOxBench Dashboard
 Interactive dashboard to compare YOLOxBench runs.
 Launch with:
 
@@ -24,7 +25,6 @@ def list_run_dirs(root: Path) -> list[Path]:
         return []
     return sorted(p.parent for p in detect_dir.glob("*/results.csv"))
 
-
 def get_metric(row: pd.Series, key: str):
     """
     Lookup `row[key]`, or first column that endswith/startswith key
@@ -37,21 +37,38 @@ def get_metric(row: pd.Series, key: str):
             return row[colname]
     return None
 
-
 # ------------------------------------------------------------------ UI Start
 
-# Read `--logdir` from the Typer wrapper
+# 1) Read `--logdir` from the Typer wrapper
 logdir = Path(st.query_params.get("logdir", ["runs"])[0]).expanduser()
 
-# Gather all runs with a CSV
-run_dirs = list_run_dirs(logdir)
+# 2) Allow manual override of run folders
+custom = st.sidebar.text_area(
+    "Custom run dirs (one per line, absolute or relative to logdir/detect)",
+    value=""
+).strip()
+
+# 3) Gather run directories
+if not custom:
+    run_dirs = list_run_dirs(logdir)
+else:
+    run_dirs = []
+    for line in custom.splitlines():
+        p = Path(line.strip())
+        if not p.is_absolute():
+            p = logdir / "detect" / line.strip()
+        if p.is_dir() and (p / "results.csv").exists():
+            run_dirs.append(p)
+    run_dirs = sorted(run_dirs)
+
 if not run_dirs:
-    st.warning(f"No runs with results.csv found under {logdir/'detect'}")
+    st.warning(f"No runs with results.csv found under {logdir/'detect'} or in custom list.")
     st.stop()
 
 run_names = [d.name for d in run_dirs]
 
-# Sidebar controls
+# ------------------------------------------------------------------ Sidebar controls
+
 st.sidebar.title("YOLOxBench runs")
 selected = st.sidebar.multiselect(
     "Select runs to compare",
@@ -66,25 +83,21 @@ metric = st.sidebar.selectbox(
 
 # ------------------------------------------------------------------ Main display
 
-# Create one Streamlit column per selected run
 cols = st.columns(len(selected) or 1)
 rows = []
 
 for col, run_name in zip(cols, selected):
-    run_dir = logdir / "detect" / run_name
+    run_dir = logdir / "detect" / run_name if not custom else next(d for d in run_dirs if d.name == run_name)
     csv_path = run_dir / "results.csv"
 
-    # If there is no CSV, warn and continue
     if not csv_path.exists():
         col.warning("No results.csv")
         continue
 
-    # Load the last row of metrics
     df = pd.read_csv(csv_path)
     last = df.iloc[-1]
     value = get_metric(last, metric)
 
-    # Prepare table row and display metric
     rows.append({"run": run_name, metric: value})
     col.header(run_name)
     if value is not None and not pd.isna(value):
@@ -92,7 +105,6 @@ for col, run_name in zip(cols, selected):
     else:
         col.info(f"{metric} not found")
 
-    # Show the PR curve if available
     pr_curve = run_dir / "PR_curve.png"
     if pr_curve.exists():
         img = mpimg.imread(pr_curve)
@@ -100,27 +112,19 @@ for col, run_name in zip(cols, selected):
 
 # ------------------------------------------------------------------ Tabular comparison
 
-# ------------------------------------------------------------------ Tabular comparison
 st.markdown("---")
 st.subheader("Tabular comparison")
 
-# If we never appended anything to rows, bail out now
 if not rows:
     st.info("No runs produced numeric metrics for the current selection.")
     st.stop()
 
-# Build DataFrame
 table = pd.DataFrame(rows)
-
-# If somehow "run" is still missing (defensive), warn and exit
 if "run" not in table.columns:
     st.warning("Internal error: no 'run' column present in metric rows.")
     st.stop()
 
-# Now safe to set index
 table = table.set_index("run")
-
-# If all values under our chosen metric are NaN, inform user
 if metric not in table.columns or table[metric].isna().all():
     st.info("No numeric metrics available for the current selection.")
 else:

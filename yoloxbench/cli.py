@@ -182,10 +182,16 @@ def compare(logdir: Path = Path("runs")):
 
 # ---------- REPORT ----------
 @app.command()
-def report(csv: Path = typer.Argument(..., help="CSV produced by `yox test`")):
+def report(
+    csv: Path = typer.Argument(..., help="CSV produced by `yox test`"),
+    runs: List[str] = typer.Option(
+        ..., "--runs", help="Run names in the same order as the CSV rows"
+    ),
+):
     from yoloxbench.reporting.markdown_report import make_markdown
-    rep = make_markdown(csv)
+    rep = make_markdown(csv, runs)
     print(f"[bold green]✓[/] Report written to {rep}")
+
 
 # ---------- main ----------
 if __name__ == "__main__":
