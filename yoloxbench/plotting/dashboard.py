@@ -8,7 +8,7 @@ import matplotlib.image as mpimg
 
 st.set_page_config(page_title="YOLOxBench Dashboard", layout="wide")
 
-logdir = Path(st.experimental_get_query_params().get("logdir", ["runs"])[0]).expanduser()
+logdir = Path(st.query_params.get("logdir", ["runs"])[0]).expanduser()
 
 st.sidebar.title("YOLOxBench Runs")
 runs = sorted(p for p in logdir.glob("detect/*/results.csv"))
@@ -30,9 +30,25 @@ for col, run_name in zip(cols, selected):
     csv = logdir / "detect" / run_name / "results.csv"
     df = pd.read_csv(csv)
     last = df.iloc[-1]
-    rows.append({"run": run_name, metric: last[metric]})
+
+    # Accept either exact column or any column that *contains* the metric key
+    def get_metric(row, key):
+        if key in row:
+            return row[key]
+        # fallback: first column that endswith the key (handles '(B)' suffix)
+        for col in row.index:
+            if col.endswith(key):
+                return row[col]
+        return None
+
+    value = get_metric(last, metric)
+    if value is None:
+        continue  # skip this run if metric missing
+
+    rows.append({"run": run_name, metric: value})
     col.header(run_name)
-    col.metric(metric.split("/")[-1], f"{last[metric]:.3f}")
+    col.metric(metric.split("/")[-1], f"{value:.3f}")
+
     img_path = logdir / "detect" / run_name / "PR_curve.png"
     if img_path.exists():
         col.image(mpimg.imread(img_path), caption="PR Curve", use_column_width=True)
