@@ -19,7 +19,7 @@ import shutil
 import pandas as pd
 import matplotlib.pyplot as plt
 
-# Define which metrics to include in the report (must match CSV column names)
+# Define which metrics to include in the report (after column normalization)
 METRICS = [
     "map50",       # mAP@0.5
     "map50_95",    # mAP@0.5:0.95
@@ -94,6 +94,14 @@ def make_markdown(csv_path: Path, runs: list[str] | None = None) -> Path:
     csv_path = Path(csv_path)
     df = pd.read_csv(csv_path)
 
+    # Normalize column names: drop 'metrics/' prefix, lowercase, replace '-' with '_'
+    df.columns = (
+        df.columns
+          .str.lower()
+          .str.replace(r"^metrics/", "", regex=True)
+          .str.replace('-', '_')
+    )
+
     # Infer runs if not provided
     if runs is None:
         if "run" not in df.columns:
@@ -131,7 +139,7 @@ def make_markdown(csv_path: Path, runs: list[str] | None = None) -> Path:
     cm_text = "\n".join(cm_section) or "_No confusion matrices found._"
 
     # 3) Metrics summary table rows
-    cols_header = " | ".join([m for m in METRICS])
+    cols_header = " | ".join(METRICS)
     dashes = "|" + "---|" * (len(METRICS) + 1)
     summary_rows = []
     for _, row in df.iterrows():
