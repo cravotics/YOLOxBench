@@ -212,11 +212,16 @@ def video(
         print(f"[bold green]✓[/] Annotated video saved to {video_out}")
 
 # ---------- Helpers ----------
-def _print_cfg(cfg):
+from dataclasses import asdict  # ⬅️ Add this import
+
+def _print_cfg(cfg: YoxConfig):
+    from rich.table import Table
+    from rich.console import Console
     table = Table(title="Resolved Training Config", box=box.SIMPLE)
-    for k, v in vars(cfg).items():
+    for k, v in asdict(cfg).items():  # ⬅️ Use asdict instead of vars()
         table.add_row(str(k), str(v))
     console.print(table)
+
 
 
 
