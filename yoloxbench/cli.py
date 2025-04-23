@@ -26,6 +26,7 @@ from .engine.video import annotate_and_save
 from .gui import run_gui
 from .analysis.advanced_compare import compare as adv_compare
 from .reporting.markdown_report import make_markdown
+from .gui.label_viewer import run_label_viewer
 
 app = typer.Typer(
     add_completion=False,
@@ -211,11 +212,12 @@ def video(
         print(f"[bold green]✓[/] Annotated video saved to {video_out}")
 
 # ---------- Helpers ----------
-def _print_cfg(cfg: YoxConfig):
+def _print_cfg(cfg):
     table = Table(title="Resolved Training Config", box=box.SIMPLE)
-    for k, v in cfg.__dict__.items():
+    for k, v in vars(cfg).items():
         table.add_row(str(k), str(v))
     console.print(table)
+
 
 
 def _print_metrics(metrics: dict):
