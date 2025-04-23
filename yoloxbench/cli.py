@@ -23,7 +23,7 @@ from rich.table import Table
 from .cfg import YoxConfig
 from .engine import trainer, validator, tester, comparator
 from .engine.video import annotate_and_save
-from .gui import run_gui
+from .gui.video_gui import run_gui
 from .analysis.advanced_compare import compare as adv_compare
 from .reporting.markdown_report import make_markdown
 from .gui.label_viewer import run_label_viewer
